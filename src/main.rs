@@ -25,7 +25,7 @@ impl Default for Config {
         Config {
             db_url: "host = localhost user = humidity_temperature password = mypasswd dbname = humidity_temperature".to_string(),
             pico: "pico_host_here".to_string(),
-            pico_port: 60438
+            pico_port: 60438,
             station_id: 0,
         }
     }
