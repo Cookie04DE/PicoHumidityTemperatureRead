@@ -46,16 +46,18 @@ async fn main() -> anyhow::Result<ExitCode> {
         Err(e) if e.kind() == ErrorKind::NotFound => {
             fs::write(
                 CONFIG_PATH,
-                serde_json::to_string_pretty(&Config::default())?,
+                serde_json::to_string_pretty(&Config::default())
+                    .map_err(|err| anyhow!("Error serializing default config: {err}"))?,
             )
             .await?;
             eprintln!("no config file found; default config has been written to {CONFIG_PATH}. Please fill it out");
             return Ok(ExitCode::FAILURE);
         }
-        result => result?,
+        result => result.map_err(|err| anyhow!("Error reading config file: {err}"))?,
     };
 
-    let config: Config = serde_json::from_str(&config)?;
+    let config: Config = serde_json::from_str(&config)
+        .map_err(|err| anyhow!("Error deserializing config: {err}"))?;
 
     let (client, connection) = tokio_postgres::connect(&config.db_url, NoTls).await?;
 
@@ -63,7 +65,7 @@ async fn main() -> anyhow::Result<ExitCode> {
 
     let insert_statement = client
         .prepare_typed("insert into measurement(at, station_id, temp, humidity) values ($1, $2, $3::decimal / 10, $4::decimal / 10)", &[Type::TIMESTAMPTZ, Type::INT4, Type::INT4, Type::INT4])
-        .await?;
+        .await.map_err(|err| anyhow!("Error preparing measurement insertion statement: {err}"))?;
 
     let now = Local::now();
 
@@ -80,11 +82,19 @@ async fn main() -> anyhow::Result<ExitCode> {
         ((now.year() as u16) << 11) as u8,
     ];
 
-    let mut pico_stream = TcpStream::connect((config.pico, config.pico_port)).await?;
+    let mut pico_stream = TcpStream::connect((config.pico, config.pico_port))
+        .await
+        .map_err(|err| anyhow!("Error connecting to the Pico: {err}"))?;
 
-    pico_stream.write_all(&packed_now).await?;
+    pico_stream
+        .write_all(&packed_now)
+        .await
+        .map_err(|err| anyhow!("Error writing the packed date time to the Pico: {err}"))?;
 
-    let measurement_count = pico_stream.read_u32_le().await?;
+    let measurement_count = pico_stream
+        .read_u32_le()
+        .await
+        .map_err(|err| anyhow!("Error reading measurement count from Pico: {err}"))?;
 
     const SECTOR_COUNT: u32 = 512;
     const PAGES_PER_SECTOR: u32 = 16;
@@ -102,7 +112,11 @@ async fn main() -> anyhow::Result<ExitCode> {
             Err(e) if e.kind() == ErrorKind::UnexpectedEof => {
                 break;
             }
-            Err(e) => return Err(e.into()),
+            Err(err) => {
+                return Err(anyhow!(
+                    "Error reading a packed measurement from the Pico: {err}"
+                ))
+            }
             Ok(packed) => packed,
         };
 
@@ -134,7 +148,10 @@ async fn main() -> anyhow::Result<ExitCode> {
         })
     }
 
-    pico_stream.shutdown().await?;
+    pico_stream
+        .shutdown()
+        .await
+        .map_err(|err| anyhow!("Error shutting the connection to the Pico down: {err}"))?;
 
     drop(pico_stream);
 
@@ -144,7 +161,8 @@ async fn main() -> anyhow::Result<ExitCode> {
                 &insert_statement,
                 &[&measurement.time, &measurement.temp, &measurement.humidity],
             )
-            .await?;
+            .await
+            .map_err(|err| anyhow!("Error inserting measurement: {err}"))?;
     }
 
     Ok(ExitCode::SUCCESS)
