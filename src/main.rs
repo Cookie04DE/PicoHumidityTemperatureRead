@@ -159,7 +159,12 @@ async fn main() -> anyhow::Result<ExitCode> {
         client
             .execute(
                 &insert_statement,
-                &[&measurement.time, &measurement.temp, &measurement.humidity],
+                &[
+                    &measurement.time,
+                    &config.station_id,
+                    &measurement.temp,
+                    &measurement.humidity,
+                ],
             )
             .await
             .map_err(|err| anyhow!("Error inserting measurement: {err}"))?;
