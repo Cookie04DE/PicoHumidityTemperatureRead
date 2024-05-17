@@ -64,7 +64,7 @@ async fn main() -> anyhow::Result<ExitCode> {
     tokio::spawn(connection);
 
     let insert_statement = client
-        .prepare_typed("insert into measurement(at, station_id, temp, humidity) values ($1, $2, $3::decimal / 10, $4::decimal / 10)", &[Type::TIMESTAMPTZ, Type::INT4, Type::INT4, Type::INT4])
+        .prepare_typed("insert into measurement(at, station_id, temp, humidity) values ($1, $2, $3::decimal / 10, $4::decimal / 10) on conflict do nothing", &[Type::TIMESTAMPTZ, Type::INT4, Type::INT4, Type::INT4])
         .await.map_err(|err| anyhow!("Error preparing measurement insertion statement: {err}"))?;
 
     let now = Local::now();
